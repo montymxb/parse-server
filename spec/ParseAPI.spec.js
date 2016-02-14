@@ -1,7 +1,7 @@
 // A bunch of different tests are in here - it isn't very thematic.
 // It would probably be better to refactor them into different files.
 
-var DatabaseAdapter = require('../DatabaseAdapter');
+var DatabaseAdapter = require('../src/DatabaseAdapter');
 var request = require('request');
 
 describe('miscellaneous', function() {
@@ -568,6 +568,42 @@ describe('miscellaneous', function() {
       expect(e.code).toEqual(141);
       expect(e.message).toEqual('noway');
       delete Parse.Cloud.Functions['willFail'];
+      done();
+    });
+  });
+
+  it('test cloud function parameter validation success', (done) => {
+    // Register a function with validation
+    Parse.Cloud.define('functionWithParameterValidation', (req, res) => {
+      res.success('works');
+    }, (params) => {
+      return params.success === 100;
+    });
+
+    Parse.Cloud.run('functionWithParameterValidation', {"success":100}).then((s) => {
+      delete Parse.Cloud.Functions['functionWithParameterValidation'];
+      done();
+    }, (e) => {
+      fail('Validation should not have failed.');
+      done();
+    });
+  });
+
+  it('test cloud function parameter validation', (done) => {
+    // Register a function with validation
+    Parse.Cloud.define('functionWithParameterValidationFailure', (req, res) => {
+      res.success('noway');
+    }, (params) => {
+      return params.success === 100;
+    });
+
+    Parse.Cloud.run('functionWithParameterValidationFailure', {"success":500}).then((s) => {
+      fail('Validation should not have succeeded');
+      delete Parse.Cloud.Functions['functionWithParameterValidationFailure'];
+      done();
+    }, (e) => {
+      expect(e.code).toEqual(141);
+      expect(e.message).toEqual('Validation failed.');
       done();
     });
   });
