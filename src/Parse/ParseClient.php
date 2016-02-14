@@ -13,15 +13,16 @@ use Parse\Internal\Encodable;
  */
 final class ParseClient
 {
-    /**
-     * Constant for the API Server Host Address.
-     */
-    const HOST_NAME = 'https://api.parse.com';
 
     /**
      * Constant for the API Service version.
      */
-    const API_VERSION = '1';
+    private static $apiVersion = '1';
+
+    /**
+     *  API Server Host Address.
+     */
+    private static $hostName = 'https://api.parse.com';
 
     /**
      * The application id.
@@ -132,6 +133,16 @@ final class ParseClient
                 self::setStorage(new ParseMemoryStorage());
             }
         }
+    }
+
+    /**
+     * @param string $serverUrl     New Host name to use
+     * @param string $apiVersion    New api version to use or null
+     *
+     */
+    public static function setServer($serverUrl,$apiVersion) {
+        self::$hostName     = $serverUrl;
+        self::$apiVersion   = $apiVersion;
     }
 
     /**
@@ -297,7 +308,16 @@ final class ParseClient
             $headers = self::_getRequestHeaders($sessionToken, $useMasterKey);
         }
 
-        $url = self::HOST_NAME.'/'.self::API_VERSION.'/'.ltrim($relativeUrl, '/');
+        if(self::$apiVersion != null) {
+            // sever with api version
+            $url = self::$hostName . '/' . self::$apiVersion . '/' . ltrim($relativeUrl, '/');
+
+        } else {
+            // server without api version
+            $url = self::$hostName . '/' . ltrim($relativeUrl, '/');
+
+        }
+
         if ($method === 'GET' && !empty($data)) {
             $url .= '?'.http_build_query($data);
         }
@@ -326,8 +346,21 @@ final class ParseClient
             curl_setopt($rest, CURLOPT_TIMEOUT, self::$timeout);
         }
 
+        //echo "SENT:" . $url . "<br/>";
+
         $response = curl_exec($rest);
+
+
+        // URL DEBUGGING
+        //echo "RESP:" . $response . "<br/>";
+
         $status = curl_getinfo($rest, CURLINFO_HTTP_CODE);
+
+
+        // STATUS
+        //echo "STAT:" . $status . "<br/>";
+
+
         $contentType = curl_getinfo($rest, CURLINFO_CONTENT_TYPE);
         if (curl_errno($rest)) {
             if (self::$enableCurlExceptions) {
@@ -371,6 +404,15 @@ final class ParseClient
      */
     public static function getStorage()
     {
+        // create if necessary
+        if (!static::$storage) {
+            if (session_status() === PHP_SESSION_ACTIVE) {
+                self::setStorage(new ParseSessionStorage());
+            } else {
+                self::setStorage(new ParseMemoryStorage());
+            }
+        }
+
         return self::$storage;
     }
 
@@ -465,7 +507,7 @@ final class ParseClient
      */
     public static function getAPIUrl()
     {
-        return self::HOST_NAME.'/'.self::API_VERSION.'/';
+        return self::$hostName.'/' . !self::$apiVersion ? '' : self::$apiVersion . '/';
     }
 
     /**

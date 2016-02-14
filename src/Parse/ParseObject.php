@@ -1219,7 +1219,15 @@ class ParseObject implements Encodable
     public function getRelation($key, $className = null)
     {
         $relation = new ParseRelation($this, $key, $className);
+
+        /* TODO issue regarding not passing a classname with migrated parse data, estimatedData never contains our relation's className and as a result it is never set.
+         *  the resulting query is performed without a target class, and fails as a result
+         */
+
         if (!$className && isset($this->estimatedData[$key])) {
+
+            echo "No class name & proper data is set<br/>";
+
             $object = $this->estimatedData[$key];
             if ($object instanceof ParseRelation) {
                 $relation->setTargetClass($object->getTargetClass());

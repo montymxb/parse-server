@@ -129,6 +129,7 @@ class ParseUser extends ParseObject
                 'Cannot log in user with an empty password.'
             );
         }
+
         $data = ['username' => $username, 'password' => $password];
         $result = ParseClient::_request('GET', 'login', '', $data);
         $user = new static();
@@ -288,7 +289,7 @@ class ParseUser extends ParseObject
     public static function logOut()
     {
         $user = static::getCurrentUser();
-        if ($user) {
+        if ($user != null) {
             try {
                 ParseClient::_request('POST', 'logout', $user->getSessionToken());
             } catch (ParseException $ex) {
@@ -296,6 +297,7 @@ class ParseUser extends ParseObject
             }
             static::$currentUser = null;
         }
+
         ParseClient::getStorage()->remove('user');
     }
 
@@ -329,16 +331,11 @@ class ParseUser extends ParseObject
     public static function getCurrentUser()
     {
         if (static::$currentUser instanceof self) {
+
             return static::$currentUser;
         }
-        $storage = ParseClient::getStorage();
-        $userData = $storage->get('user');
-        if ($userData instanceof self) {
-            static::$currentUser = $userData;
-
-            return $userData;
-        }
         if (isset($userData['id']) && isset($userData['_sessionToken'])) {
+
             $user = static::create('_User', $userData['id']);
             unset($userData['id']);
             $user->_sessionToken = $userData['_sessionToken'];
@@ -352,7 +349,16 @@ class ParseUser extends ParseObject
             return $user;
         }
 
-        return;
+        // perform an additional check in our storage
+        if(($storage = ParseClient::getStorage()) != null && $storage->get('user') != null) {
+
+            static::$currentUser = $storage->get('user');
+
+            return static::$currentUser;
+        }
+
+        // no user, return null
+        return null;
     }
 
     /**
