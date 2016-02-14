@@ -1,215 +1,134 @@
-Parse PHP SDK
--------------
+## parse-server
 
-The Parse PHP SDK gives you access to the powerful Parse cloud platform
-from your PHP app or script.
+[![Build Status](https://img.shields.io/travis/ParsePlatform/parse-server/master.svg?style=flat)](https://travis-ci.org/ParsePlatform/parse-server)
+[![Coverage Status](https://img.shields.io/codecov/c/github/ParsePlatform/parse-server/master.svg)](https://codecov.io/github/ParsePlatform/parse-server?branch=master)
+[![npm version](https://img.shields.io/npm/v/parse-server.svg?style=flat)](https://www.npmjs.com/package/parse-server)
 
-Installation
-------------
+A Parse.com API compatible router package for Express
 
-[Get Composer], the PHP package manager. Then create a composer.json file in
- your projects root folder, containing:
+Read the announcement blog post here:  http://blog.parse.com/announcements/introducing-parse-server-and-the-database-migration-tool/
 
-```json
-{
-    "require": {
-        "parse/php-sdk" : "1.1.*"
-    }
-}
-```
+Read the migration guide here: https://parse.com/docs/server/guide#migrating
 
-Run "composer install" to download the SDK and set up the autoloader,
-and then require it from your PHP script:
+There is a development wiki here on GitHub: https://github.com/ParsePlatform/parse-server/wiki
 
-```php
-require 'vendor/autoload.php';
-```
+---
 
-Note: The Parse PHP SDK requires PHP 5.4 or newer.
+#### Basic options:
 
-Alternative Method
-------------------
+* databaseURI (required) - The connection string for your database, i.e. `mongodb://user:pass@host.com/dbname`
+* appId (required) - The application id to host with this server instance
+* masterKey (required) - The master key to use for overriding ACL security
+* cloud - The absolute path to your cloud code main.js file
+* fileKey - For migrated apps, this is necessary to provide access to files already hosted on Parse.
+* facebookAppIds - An array of valid Facebook application IDs.
+* serverURL - URL which will be used by Cloud Code functions to make requests against.
 
-If you don't want to use Composer, you can include the ```autoload.php```
-file in your code to automatically load the Parse SDK classes.
+#### Client key options:
 
-```php
-require 'autoload.php';
-```
+The client keys used with Parse are no longer necessary with parse-server.  If you wish to still require them, perhaps to be able to refuse access to older clients, you can set the keys at intialization time.  Setting any of these keys will require all requests to provide one of the configured keys.
 
-Initialization
----------------
+* clientKey
+* javascriptKey
+* restAPIKey
+* dotNetKey
 
-After including the required files from the SDK, you need to initalize the ParseClient using your Parse API keys:
+#### Advanced options:
 
-```php
-ParseClient::initialize( $app_id, $rest_key, $master_key );
-```
+* filesAdapter - The default behavior (GridStore) can be changed by creating an adapter class (see `FilesAdapter.js`)
+* databaseAdapter (unfinished) - The backing store can be changed by creating an adapter class (see `DatabaseAdapter.js`)
 
-Usage
------
+---
 
-Check out the [Parse PHP Guide] for the full documentation.
+### Usage
 
-Add the "use" declarations where you'll be using the classes. For all of the
-sample code in this file:
+You can create an instance of ParseServer, and mount it on a new or existing Express website:
 
-```php
-use Parse\ParseObject;
-use Parse\ParseQuery;
-use Parse\ParseACL;
-use Parse\ParsePush;
-use Parse\ParseUser;
-use Parse\ParseInstallation;
-use Parse\ParseException;
-use Parse\ParseAnalytics;
-use Parse\ParseFile;
-use Parse\ParseCloud;
-use Parse\ParseClient;
-```
+```js
+var express = require('express');
+var ParseServer = require('parse-server').ParseServer;
 
-Objects:
+var app = express();
 
-```php
-$object = ParseObject::create("TestObject");
-$objectId = $object->getObjectId();
-$php = $object->get("elephant");
+var port = process.env.PORT || 1337;
 
-// Set values:
-$object->set("elephant", "php");
-$object->set("today", new DateTime());
-$object->setArray("mylist", [1, 2, 3]);
-$object->setAssociativeArray(
-    "languageTypes", array("php" => "awesome", "ruby" => "wtf")
-);
-
-// Save:
-$object->save();
-```
-
-Users:
-
-```php
-// Signup
-$user = new ParseUser();
-$user->setUsername("foo");
-$user->setPassword("Q2w#4!o)df");
-try {
-    $user->signUp();
-} catch (ParseException $ex) {
-    // error in $ex->getMessage();
-}
-
-// Login
-try {
-    $user = ParseUser::logIn("foo", "Q2w#4!o)df");
-} catch(ParseException $ex) {
-    // error in $ex->getMessage();
-}
-
-// Current user
-$user = ParseUser::getCurrentUser();
-```
-
-Security:
-
-```php
-// Access only by the ParseUser in $user
-$userACL = ParseACL::createACLWithUser($user);
-
-// Access only by master key
-$restrictedACL = new ParseACL();
-
-// Set individual access rights
-$acl = new ParseACL();
-$acl->setPublicReadAccess(true);
-$acl->setPublicWriteAccess(false);
-$acl->setUserWriteAccess($user, true);
-$acl->setRoleWriteAccessWithName("PHPFans", true);
-```
-
-Queries:
-
-```php
-$query = new ParseQuery("TestObject");
-
-// Get a specific object:
-$object = $query->get("anObjectId");
-
-$query->limit(10); // default 100, max 1000
-
-// All results:
-$results = $query->find();
-
-// Just the first result:
-$first = $query->first();
-
-// Process ALL (without limit) results with "each".
-// Will throw if sort, skip, or limit is used.
-$query->each(function($obj) {
-    echo $obj->getObjectId();
+// Specify the connection string for your mongodb database
+// and the location to your Parse cloud code
+var api = new ParseServer({
+  databaseURI: 'mongodb://localhost:27017/dev',
+  cloud: '/home/myApp/cloud/main.js', // Provide an absolute path
+  appId: 'myAppId',
+  masterKey: 'mySecretMasterKey',
+  fileKey: 'optionalFileKey',
+  serverURL: 'http://localhost:' + port + '/parse' // Don't forget to change to https if needed
 });
+
+// Serve the Parse API on the /parse URL prefix
+app.use('/parse', api);
+
+// Hello world
+app.get('/', function(req, res) {
+  res.status(200).send('Express is running here.');
+});
+
+app.listen(port, function() {
+  console.log('parse-server-example running on port ' + port + '.');
+});
+
 ```
 
-Cloud Functions:
 
-```php
-$results = ParseCloud::run("aCloudFunction", array("from" => "php"));
+#### Standalone usage
+
+You can configure the Parse Server with environment variables:
+
+```js 
+PARSE_SERVER_DATABASE_URI
+PARSE_SERVER_CLOUD_CODE_MAIN
+PARSE_SERVER_COLLECTION_PREFIX
+PARSE_SERVER_APPLICATION_ID // required
+PARSE_SERVER_CLIENT_KEY 
+PARSE_SERVER_REST_API_KEY
+PARSE_SERVER_DOTNET_KEY
+PARSE_SERVER_JAVASCRIPT_KEY
+PARSE_SERVER_DOTNET_KEY
+PARSE_SERVER_MASTER_KEY // required
+PARSE_SERVER_FILE_KEY
+PARSE_SERVER_FACEBOOK_APP_IDS // string of comma separated list
+
 ```
 
-Analytics:
 
-```php
-ParseAnalytics::track("logoReaction", array(
-    "saw" => "elephant",
-    "said" => "cute"
-));
-```
 
-Files:
+Alernatively, you can use the `PARSE_SERVER_OPTIONS` environment variable set to the JSON of your configuration (see Usage).
 
-```php
-// Get from a Parse Object:
-$file = $aParseObject->get("aFileColumn");
-$name = $file->getName();
-$url = $file->getURL();
-// Download the contents:
-$contents = $file->getData();
+To start the server, just run `npm start`.
 
-// Upload from a local file:
-$file = ParseFile::createFromFile(
-    "/tmp/foo.bar", "Parse.txt", "text/plain"
-);
+##### Global installation
 
-// Upload from variable contents (string, binary)
-$file = ParseFile::createFromData($contents, "Parse.txt", "text/plain");
-```
+You can install parse-server globally
 
-Push:
+`$ npm install -g parse-server`
 
-```php
-$data = array("alert" => "Hi!");
+Now you can just run `$ parse-server` from your command line.
 
-// Push to Channels
-ParsePush::send(array(
-    "channels" => ["PHPFans"],
-    "data" => $data
-));
 
-// Push to Query
-$query = ParseInstallation::query();
-$query->equalTo("design", "rad");
-ParsePush::send(array(
-    "where" => $query,
-    "data" => $data
-));
-```
+### Supported
 
-Contributing / Testing
-----------------------
+* CRUD operations
+* Schema validation
+* Pointers
+* Users, including Facebook login and anonymous users
+* Files
+* Installations
+* Sessions
+* Geopoints
+* Roles
+* Class-level Permissions (see below)
 
-See the CONTRIBUTORS.md file for information on testing and contributing to
-the Parse PHP SDK. We welcome fixes and enhancements.
+Parse server does not include a web-based dashboard, which is where class-level permissions have always been configured.  If you migrate an app from Parse, you'll see the format for CLPs in the SCHEMA collection.  There is also a `setPermissions` method on the `Schema` class, which you can see used in the unit-tests in `Schema.spec.js`
+You can also set up an app on Parse, providing the connection string for your mongo database, and continue to use the dashboard on Parse.com.
 
-[Get Composer]: https://getcomposer.org/download/
-[Parse PHP Guide]: https://www.parse.com/docs/php/guide
+### Not supported
+
+* Push - We did not rebuild a new push delivery system for parse-server, but we are open to working on one together with the community.
