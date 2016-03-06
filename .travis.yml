@@ -5,8 +5,11 @@ language: node_js
 node_js:
   - "4.3"
 env:
-  - MONGODB_VERSION=2.6.11
-  - MONGODB_VERSION=3.0.8
+  global: 
+    - COVERAGE_OPTION='./node_modules/babel-istanbul/lib/cli.js cover -x **/spec/**'
+  matrix:
+    - MONGODB_VERSION=2.6.11
+    - MONGODB_VERSION=3.0.8
 cache:
   directories:
     - $HOME/.mongodb/versions/downloads
