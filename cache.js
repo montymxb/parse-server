@@ -1,37 +1,42 @@
-var apps = {};
-var stats = {};
-var isLoaded = false;
-var users = {};
+"use strict";
 
-function getApp(app, callback) {
-  if (apps[app]) return callback(true, apps[app]);
-  return callback(false);
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.CacheStore = CacheStore;
+exports.clearCache = clearCache;
+/**  weak */
+
+function CacheStore() {
+  var dataStore = {};
+  return {
+    get: function get(key) {
+      return dataStore[key];
+    },
+    set: function set(key, value) {
+      dataStore[key] = value;
+    },
+    remove: function remove(key) {
+      delete dataStore[key];
+    },
+    clear: function clear() {
+      dataStore = {};
+    }
+  };
 }
 
-function updateStat(key, value) {
-  stats[key] = value;
+var apps = CacheStore();
+var users = CacheStore();
+
+//So far used only in tests
+function clearCache() {
+  apps.clear();
+  users.clear();
 }
 
-function getUser(sessionToken) {
-  if (users[sessionToken]) return users[sessionToken];
-  return undefined;
-}
-
-function setUser(sessionToken, userObject) {
-  users[sessionToken] = userObject;
-}
-
-function clearUser(sessionToken) {
-  delete users[sessionToken];
-}
-
-module.exports = {
+exports.default = {
   apps: apps,
-  stats: stats,
-  isLoaded: isLoaded,
-  getApp: getApp,
-  updateStat: updateStat,
-  clearUser: clearUser,
-  getUser: getUser,
-  setUser: setUser
+  users: users,
+  clearCache: clearCache,
+  CacheStore: CacheStore
 };

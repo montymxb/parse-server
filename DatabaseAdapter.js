@@ -1,3 +1,16 @@
+'use strict';
+
+var _DatabaseController = require('./Controllers/DatabaseController');
+
+var _DatabaseController2 = _interopRequireDefault(_DatabaseController);
+
+var _MongoStorageAdapter = require('./Adapters/Storage/Mongo/MongoStorageAdapter');
+
+var _MongoStorageAdapter2 = _interopRequireDefault(_MongoStorageAdapter);
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+/**  weak */
 // Database Adapter
 //
 // Allows you to change the underlying database.
@@ -12,14 +25,13 @@
 // * destroy(className, query, options)
 // * This list is incomplete and the database process is not fully modularized.
 //
-// Default is ExportAdapter, which uses mongo.
+// Default is MongoStorageAdapter.
 
-var ExportAdapter = require('./ExportAdapter');
+var DefaultDatabaseURI = 'mongodb://localhost:27017/parse';
 
-var adapter = ExportAdapter;
-var cache = require('./cache');
+var adapter = _MongoStorageAdapter2.default;
 var dbConnections = {};
-var databaseURI = 'mongodb://localhost:27017/parse';
+var databaseURI = DefaultDatabaseURI;
 var appDatabaseURIs = {};
 
 function setAdapter(databaseAdapter) {
@@ -34,16 +46,23 @@ function setAppDatabaseURI(appId, uri) {
   appDatabaseURIs[appId] = uri;
 }
 
-function getDatabaseConnection(appId) {
+//Used by tests
+function clearDatabaseURIs() {
+  appDatabaseURIs = {};
+  dbConnections = {};
+}
+
+function getDatabaseConnection(appId, collectionPrefix) {
   if (dbConnections[appId]) {
     return dbConnections[appId];
   }
 
-  var dbURI = (appDatabaseURIs[appId] ? appDatabaseURIs[appId] : databaseURI);
-  dbConnections[appId] = new adapter(dbURI, {
-    collectionPrefix: cache.apps[appId]['collectionPrefix']
+  var dbURI = appDatabaseURIs[appId] ? appDatabaseURIs[appId] : databaseURI;
+
+  var storageAdapter = new adapter(dbURI);
+  dbConnections[appId] = new _DatabaseController2.default(storageAdapter, {
+    collectionPrefix: collectionPrefix
   });
-  dbConnections[appId].connect();
   return dbConnections[appId];
 }
 
@@ -52,5 +71,7 @@ module.exports = {
   getDatabaseConnection: getDatabaseConnection,
   setAdapter: setAdapter,
   setDatabaseURI: setDatabaseURI,
-  setAppDatabaseURI: setAppDatabaseURI
+  setAppDatabaseURI: setAppDatabaseURI,
+  clearDatabaseURIs: clearDatabaseURIs,
+  defaultDatabaseURI: databaseURI
 };

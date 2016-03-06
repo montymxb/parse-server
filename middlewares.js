@@ -1,7 +1,14 @@
+'use strict';
+
+var _cache = require('./cache');
+
+var _cache2 = _interopRequireDefault(_cache);
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
 var Parse = require('parse/node').Parse;
 
 var auth = require('./Auth');
-var cache = require('./cache');
 var Config = require('./Config');
 
 // Checks that the request is authorized for this app and checks user
@@ -26,9 +33,15 @@ function handleParseHeaders(req, res, next) {
     restAPIKey: req.get('X-Parse-REST-API-Key')
   };
 
+  if (req.body) {
+    // Unity SDK sends a _noBody key which needs to be removed.
+    // Unclear at this point if action needs to be taken.
+    delete req.body._noBody;
+  }
+
   var fileViaJSON = false;
 
-  if (!info.appId || !cache.apps[info.appId]) {
+  if (!info.appId || !_cache2.default.apps.get(info.appId)) {
     // See if we can find the app id on the body.
     if (req.body instanceof Buffer) {
       // The only chance to find the app id is if this is a file
@@ -37,13 +50,7 @@ function handleParseHeaders(req, res, next) {
       fileViaJSON = true;
     }
 
-    if (req.body && req.body._ApplicationId
-    && cache.apps[req.body._ApplicationId]
-    && (
-      !info.masterKey
-      ||
-      cache.apps[req.body._ApplicationId]['masterKey'] === info.masterKey)
-    ) {
+    if (req.body && req.body._ApplicationId && _cache2.default.apps.get(req.body._ApplicationId) && (!info.masterKey || _cache2.default.apps.get(req.body._ApplicationId).masterKey === info.masterKey)) {
       info.appId = req.body._ApplicationId;
       info.javascriptKey = req.body._JavaScriptKey || '';
       delete req.body._ApplicationId;
@@ -77,73 +84,69 @@ function handleParseHeaders(req, res, next) {
     req.body = new Buffer(base64, 'base64');
   }
 
-  info.app = cache.apps[info.appId];
+  info.app = _cache2.default.apps.get(info.appId);
   req.config = new Config(info.appId, mount);
-  req.database = req.config.database;
   req.info = info;
 
-  var isMaster = (info.masterKey === req.config.masterKey);
+  var isMaster = info.masterKey === req.config.masterKey;
 
   if (isMaster) {
-    req.auth = new auth.Auth(req.config, true);
+    req.auth = new auth.Auth({ config: req.config, installationId: info.installationId, isMaster: true });
     next();
     return;
   }
 
   // Client keys are not required in parse-server, but if any have been configured in the server, validate them
   //  to preserve original behavior.
-  var keyRequired = (req.config.clientKey
-    || req.config.javascriptKey
-    || req.config.dotNetKey
-    || req.config.restAPIKey);
-  var keyHandled = false;
-  if (keyRequired
-    && ((info.clientKey && req.config.clientKey && info.clientKey === req.config.clientKey)
-      || (info.javascriptKey && req.config.javascriptKey && info.javascriptKey === req.config.javascriptKey)
-      || (info.dotNetKey && req.config.dotNetKey && info.dotNetKey === req.config.dotNetKey)
-      || (info.restAPIKey && req.config.restAPIKey && info.restAPIKey === req.config.restAPIKey)
-    )) {
-    keyHandled = true;
-  }
-  if (keyRequired && !keyHandled) {
+  var keys = ["clientKey", "javascriptKey", "dotNetKey", "restAPIKey"];
+
+  // We do it with mismatching keys to support no-keys config
+  var keyMismatch = keys.reduce(function (mismatch, key) {
+
+    // check if set in the config and compare
+    if (req.config[key] && info[key] !== req.config[key]) {
+      mismatch++;
+    }
+    return mismatch;
+  }, 0);
+
+  // All keys mismatch
+  if (keyMismatch == keys.length) {
     return invalidRequest(req, res);
   }
 
   if (!info.sessionToken) {
-    req.auth = new auth.Auth(req.config, false);
+    req.auth = new auth.Auth({ config: req.config, installationId: info.installationId, isMaster: false });
     next();
     return;
   }
 
-  return auth.getAuthForSessionToken(
-    req.config, info.sessionToken).then((auth) => {
-      if (auth) {
-        req.auth = auth;
-        next();
-      }
-    }).catch((error) => {
-      // TODO: Determine the correct error scenario.
-      console.log(error);
-      throw new Parse.Error(Parse.Error.UNKNOWN_ERROR, error);
-    });
-
+  return auth.getAuthForSessionToken({ config: req.config, installationId: info.installationId, sessionToken: info.sessionToken }).then(function (auth) {
+    if (auth) {
+      req.auth = auth;
+      next();
+    }
+  }).catch(function (error) {
+    // TODO: Determine the correct error scenario.
+    console.log(error);
+    throw new Parse.Error(Parse.Error.UNKNOWN_ERROR, error);
+  });
 }
 
-var allowCrossDomain = function(req, res, next) {
+var allowCrossDomain = function allowCrossDomain(req, res, next) {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS');
-  res.header('Access-Control-Allow-Headers', '*');
+  res.header('Access-Control-Allow-Headers', 'X-Parse-Master-Key, X-Parse-REST-API-Key, X-Parse-Javascript-Key, X-Parse-Application-Id, X-Parse-Client-Version, X-Parse-Session-Token, X-Requested-With, X-Parse-Revocable-Session, Content-Type');
 
   // intercept OPTIONS method
   if ('OPTIONS' == req.method) {
     res.send(200);
-  }
-  else {
+  } else {
     next();
   }
 };
 
-var allowMethodOverride = function(req, res, next) {
+var allowMethodOverride = function allowMethodOverride(req, res, next) {
   if (req.method === 'POST' && req.body._method) {
     req.originalMethod = req.method;
     req.method = req.body._method;
@@ -152,41 +155,64 @@ var allowMethodOverride = function(req, res, next) {
   next();
 };
 
-var handleParseErrors = function(err, req, res, next) {
+var handleParseErrors = function handleParseErrors(err, req, res, next) {
   if (err instanceof Parse.Error) {
     var httpStatus;
 
     // TODO: fill out this mapping
     switch (err.code) {
-    case Parse.Error.INTERNAL_SERVER_ERROR:
-      httpStatus = 500;
-      break;
-    case Parse.Error.OBJECT_NOT_FOUND:
-      httpStatus = 404;
-      break;
-    default:
-      httpStatus = 400;
+      case Parse.Error.INTERNAL_SERVER_ERROR:
+        httpStatus = 500;
+        break;
+      case Parse.Error.OBJECT_NOT_FOUND:
+        httpStatus = 404;
+        break;
+      default:
+        httpStatus = 400;
     }
 
     res.status(httpStatus);
-    res.json({code: err.code, error: err.message});
+    res.json({ code: err.code, error: err.message });
+  } else if (err.status && err.message) {
+    res.status(err.status);
+    res.json({ error: err.message });
   } else {
     console.log('Uncaught internal server error.', err, err.stack);
     res.status(500);
-    res.json({code: Parse.Error.INTERNAL_SERVER_ERROR,
-              message: 'Internal server error.'});
+    res.json({ code: Parse.Error.INTERNAL_SERVER_ERROR,
+      message: 'Internal server error.' });
   }
 };
+
+function enforceMasterKeyAccess(req, res, next) {
+  if (!req.auth.isMaster) {
+    res.status(403);
+    res.end('{"error":"unauthorized: master key is required"}');
+    return;
+  }
+  next();
+}
+
+function promiseEnforceMasterKeyAccess(request) {
+  if (!request.auth.isMaster) {
+    var error = new Error();
+    error.status = 403;
+    error.message = "unauthorized: master key is required";
+    throw error;
+  }
+  return Promise.resolve();
+}
 
 function invalidRequest(req, res) {
   res.status(403);
   res.end('{"error":"unauthorized"}');
 }
 
-
 module.exports = {
   allowCrossDomain: allowCrossDomain,
   allowMethodOverride: allowMethodOverride,
   handleParseErrors: handleParseErrors,
-  handleParseHeaders: handleParseHeaders
+  handleParseHeaders: handleParseHeaders,
+  enforceMasterKeyAccess: enforceMasterKeyAccess,
+  promiseEnforceMasterKeyAccess: promiseEnforceMasterKeyAccess
 };

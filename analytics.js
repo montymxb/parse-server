@@ -1,3 +1,5 @@
+'use strict';
+
 // analytics.js
 
 var Parse = require('parse/node').Parse,
@@ -6,7 +8,6 @@ var Parse = require('parse/node').Parse,
 
 var router = new PromiseRouter();
 
-
 // Returns a promise that resolves to an empty object response
 function ignoreAndSucceed(req) {
   return Promise.resolve({
@@ -14,7 +15,7 @@ function ignoreAndSucceed(req) {
   });
 }
 
-router.route('POST','/events/AppOpened', ignoreAndSucceed);
-router.route('POST','/events/:eventName', ignoreAndSucceed);
+router.route('POST', '/events/AppOpened', ignoreAndSucceed);
+router.route('POST', '/events/:eventName', ignoreAndSucceed);
 
 module.exports = router;

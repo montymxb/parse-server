@@ -1,3 +1,12 @@
+'use strict';
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+
+var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol" ? function (obj) { return typeof obj; } : function (obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol ? "symbol" : typeof obj; };
+
+exports.transformKeyValue = transformKeyValue;
 var mongodb = require('mongodb');
 var Parse = require('parse/node').Parse;
 
@@ -27,80 +36,77 @@ function transformKeyValue(schema, className, restKey, restValue, options) {
   // Check if the schema is known since it's a built-in field.
   var key = restKey;
   var timeField = false;
-  switch(key) {
-  case 'objectId':
-  case '_id':
-    key = '_id';
-    break;
-  case 'createdAt':
-  case '_created_at':
-    key = '_created_at';
-    timeField = true;
-    break;
-  case 'updatedAt':
-  case '_updated_at':
-    key = '_updated_at';
-    timeField = true;
-    break;
-  case 'sessionToken':
-  case '_session_token':
-    key = '_session_token';
-    break;
-  case 'expiresAt':
-  case '_expiresAt':
-    key = 'expiresAt';
-    timeField = true;
-    break;
-  case '_rperm':
-  case '_wperm':
-    return {key: key, value: restValue};
-    break;
-  case 'authData.anonymous.id':
-    if (options.query) {
-      return {key: '_auth_data_anonymous.id', value: restValue};
-    }
-    throw new Parse.Error(Parse.Error.INVALID_KEY_NAME,
-                          'can only query on ' + key);
-    break;
-  case 'authData.facebook.id':
-    if (options.query) {
-      // Special-case auth data.
-      return {key: '_auth_data_facebook.id', value: restValue};
-    }
-    throw new Parse.Error(Parse.Error.INVALID_KEY_NAME,
-                          'can only query on ' + key);
-    break;
-  case '$or':
-    if (!options.query) {
-      throw new Parse.Error(Parse.Error.INVALID_KEY_NAME,
-                            'you can only use $or in queries');
-    }
-    if (!(restValue instanceof Array)) {
-      throw new Parse.Error(Parse.Error.INVALID_QUERY,
-                            'bad $or format - use an array value');
-    }
-    var mongoSubqueries = restValue.map((s) => {
-      return transformWhere(schema, className, s);
-    });
-    return {key: '$or', value: mongoSubqueries};
-  case '$and':
-    if (!options.query) {
-      throw new Parse.Error(Parse.Error.INVALID_KEY_NAME,
-                            'you can only use $and in queries');
-    }
-    if (!(restValue instanceof Array)) {
-      throw new Parse.Error(Parse.Error.INVALID_QUERY,
-                            'bad $and format - use an array value');
-    }
-    var mongoSubqueries = restValue.map((s) => {
-      return transformWhere(schema, className, s);
-    });
-    return {key: '$and', value: mongoSubqueries};
-  default:
-    if (options.validate && !key.match(/^[a-zA-Z][a-zA-Z0-9_\.]*$/)) {
-      throw new Parse.Error(Parse.Error.INVALID_KEY_NAME,
-                            'invalid key name: ' + key);
-    }
+  switch (key) {
+    case 'objectId':
+    case '_id':
+      key = '_id';
+      break;
+    case 'createdAt':
+    case '_created_at':
+      key = '_created_at';
+      timeField = true;
+      break;
+    case 'updatedAt':
+    case '_updated_at':
+      key = '_updated_at';
+      timeField = true;
+      break;
+    case '_email_verify_token':
+      key = "_email_verify_token";
+      break;
+    case '_perishable_token':
+      key = "_perishable_token";
+      break;
+    case 'sessionToken':
+    case '_session_token':
+      key = '_session_token';
+      break;
+    case 'expiresAt':
+    case '_expiresAt':
+      key = 'expiresAt';
+      timeField = true;
+      break;
+    case '_rperm':
+    case '_wperm':
+      return { key: key, value: restValue };
+      break;
+    case '$or':
+      if (!options.query) {
+        throw new Parse.Error(Parse.Error.INVALID_KEY_NAME, 'you can only use $or in queries');
+      }
+      if (!(restValue instanceof Array)) {
+        throw new Parse.Error(Parse.Error.INVALID_QUERY, 'bad $or format - use an array value');
+      }
+      var mongoSubqueries = restValue.map(function (s) {
+        return transformWhere(schema, className, s);
+      });
+      return { key: '$or', value: mongoSubqueries };
+    case '$and':
+      if (!options.query) {
+        throw new Parse.Error(Parse.Error.INVALID_KEY_NAME, 'you can only use $and in queries');
+      }
+      if (!(restValue instanceof Array)) {
+        throw new Parse.Error(Parse.Error.INVALID_QUERY, 'bad $and format - use an array value');
+      }
+      var mongoSubqueries = restValue.map(function (s) {
+        return transformWhere(schema, className, s);
+      });
+      return { key: '$and', value: mongoSubqueries };
+    default:
+      // Other auth data
+      var authDataMatch = key.match(/^authData\.([a-zA-Z0-9_]+)\.id$/);
+      if (authDataMatch) {
+        if (options.query) {
+          var provider = authDataMatch[1];
+          // Special-case auth data.
+          return { key: '_auth_data_' + provider + '.id', value: restValue };
+        }
+        throw new Parse.Error(Parse.Error.INVALID_KEY_NAME, 'can only query on ' + key);
+        break;
+      };
+      if (options.validate && !key.match(/^[a-zA-Z][a-zA-Z0-9_\.]*$/)) {
+        throw new Parse.Error(Parse.Error.INVALID_KEY_NAME, 'invalid key name: ' + key);
+      }
   }
 
   // Handle special schema key changes
@@ -110,33 +116,32 @@ function transformKeyValue(schema, className, restKey, restValue, options) {
   if (schema && schema.getExpectedType) {
     expected = schema.getExpectedType(className, key);
   }
-  if ((expected && expected[0] == '*') ||
-      (!expected && restValue && restValue.__type == 'Pointer')) {
+  if (expected && expected[0] == '*' || !expected && restValue && restValue.__type == 'Pointer') {
     key = '_p_' + key;
   }
-  var inArray = (expected === 'array');
+  var inArray = expected === 'array';
 
   // Handle query constraints
   if (options.query) {
     value = transformConstraint(restValue, inArray);
     if (value !== CannotTransform) {
-      return {key: key, value: value};
+      return { key: key, value: value };
     }
   }
 
   if (inArray && options.query && !(restValue instanceof Array)) {
     return {
-      key: key, value: [restValue]
+      key: key, value: { '$all': [restValue] }
     };
   }
 
   // Handle atomic values
   var value = transformAtom(restValue, false, options);
   if (value !== CannotTransform) {
-    if (timeField && (typeof value === 'string')) {
+    if (timeField && typeof value === 'string') {
       value = new Date(value);
     }
-    return {key: key, value: value};
+    return { key: key, value: value };
   }
 
   // ACLs are handled before this method is called
@@ -145,25 +150,22 @@ function transformKeyValue(schema, className, restKey, restValue, options) {
     throw 'There was a problem transforming an ACL.';
   }
 
-
-
   // Handle arrays
   if (restValue instanceof Array) {
     if (options.query) {
-      throw new Parse.Error(Parse.Error.INVALID_JSON,
-                            'cannot use array as query param');
+      throw new Parse.Error(Parse.Error.INVALID_JSON, 'cannot use array as query param');
     }
-    value = restValue.map((restObj) => {
+    value = restValue.map(function (restObj) {
       var out = transformKeyValue(schema, className, restKey, restObj, { inArray: true });
       return out.value;
     });
-    return {key: key, value: value};
+    return { key: key, value: value };
   }
 
   // Handle update operators
   value = transformUpdateOperator(restValue, !options.update);
   if (value !== CannotTransform) {
-    return {key: key, value: value};
+    return { key: key, value: value };
   }
 
   // Handle normal objects by recursing
@@ -174,9 +176,8 @@ function transformKeyValue(schema, className, restKey, restValue, options) {
     // For recursed objects, keep the keys in rest format
     value[subRestKey] = out.value;
   }
-  return {key: key, value: value};
+  return { key: key, value: value };
 }
-
 
 // Main exposed method to help run queries.
 // restWhere is the "where" clause in REST API form.
@@ -185,12 +186,10 @@ function transformKeyValue(schema, className, restKey, restValue, options) {
 function transformWhere(schema, className, restWhere) {
   var mongoWhere = {};
   if (restWhere['ACL']) {
-    throw new Parse.Error(Parse.Error.INVALID_QUERY,
-                          'Cannot query on ACL.');
+    throw new Parse.Error(Parse.Error.INVALID_QUERY, 'Cannot query on ACL.');
   }
   for (var restKey in restWhere) {
-    var out = transformKeyValue(schema, className, restKey, restWhere[restKey],
-                                {query: true, validate: true});
+    var out = transformKeyValue(schema, className, restKey, restWhere[restKey], { query: true, validate: true });
     mongoWhere[out.key] = out.value;
   }
   return mongoWhere;
@@ -228,14 +227,12 @@ function transformUpdate(schema, className, restUpdate) {
   }
 
   for (var restKey in restUpdate) {
-    var out = transformKeyValue(schema, className, restKey, restUpdate[restKey],
-                                {update: true});
+    var out = transformKeyValue(schema, className, restKey, restUpdate[restKey], { update: true });
 
     // If the output value is an object with any $ keys, it's an
     // operator that needs to be lifted onto the top level update
     // object.
-    if (typeof out.value === 'object' && out.value !== null &&
-        out.value.__op) {
+    if (_typeof(out.value) === 'object' && out.value !== null && out.value.__op) {
       mongoUpdate[out.value.__op] = mongoUpdate[out.value.__op] || {};
       mongoUpdate[out.value.__op][out.key] = out.value.arg;
     } else {
@@ -265,12 +262,8 @@ function transformACL(restObject) {
       wperm.push(entry);
     }
   }
-  if (rperm.length) {
-    output._rperm = rperm;
-  }
-  if (wperm.length) {
-    output._wperm = wperm;
-  }
+  output._rperm = rperm;
+  output._wperm = wperm;
   delete restObject.ACL;
   return output;
 }
@@ -285,16 +278,16 @@ function untransformACL(mongoObject) {
   var acl = {};
   var rperm = mongoObject['_rperm'] || [];
   var wperm = mongoObject['_wperm'] || [];
-  rperm.map((entry) => {
+  rperm.map(function (entry) {
     if (!acl[entry]) {
-      acl[entry] = {read: true};
+      acl[entry] = { read: true };
     } else {
       acl[entry]['read'] = true;
     }
   });
-  wperm.map((entry) => {
+  wperm.map(function (entry) {
     if (!acl[entry]) {
-      acl[entry] = {write: true};
+      acl[entry] = { write: true };
     } else {
       acl[entry]['write'] = true;
     }
@@ -307,7 +300,7 @@ function untransformACL(mongoObject) {
 
 // Transforms a key used in the REST API format to its mongo format.
 function transformKey(schema, className, key) {
-  return transformKeyValue(schema, className, key, null, {validate: true}).key;
+  return transformKeyValue(schema, className, key, null, { validate: true }).key;
 }
 
 // A sentinel value that helper transformations return when they
@@ -328,64 +321,61 @@ function transformAtom(atom, force, options) {
   options = options || {};
   var inArray = options.inArray;
   var inObject = options.inObject;
-  switch(typeof atom) {
-  case 'string':
-  case 'number':
-  case 'boolean':
-    return atom;
-
-  case 'undefined':
-    return atom;
-  case 'symbol':
-  case 'function':
-    throw new Parse.Error(Parse.Error.INVALID_JSON,
-                          'cannot transform value: ' + atom);
-
-  case 'object':
-    if (atom instanceof Date) {
-      // Technically dates are not rest format, but, it seems pretty
-      // clear what they should be transformed to, so let's just do it.
+  switch (typeof atom === 'undefined' ? 'undefined' : _typeof(atom)) {
+    case 'string':
+    case 'number':
+    case 'boolean':
       return atom;
-    }
 
-    if (atom === null) {
+    case 'undefined':
       return atom;
-    }
+    case 'symbol':
+    case 'function':
+      throw new Parse.Error(Parse.Error.INVALID_JSON, 'cannot transform value: ' + atom);
 
-    // TODO: check validity harder for the __type-defined types
-    if (atom.__type == 'Pointer') {
-      if (!inArray && !inObject) {
-        return atom.className + '$' + atom.objectId;
+    case 'object':
+      if (atom instanceof Date) {
+        // Technically dates are not rest format, but, it seems pretty
+        // clear what they should be transformed to, so let's just do it.
+        return atom;
       }
-      return {
-        __type: 'Pointer',
-        className: atom.className,
-        objectId: atom.objectId
-      };
-    }
-    if (DateCoder.isValidJSON(atom)) {
-      return DateCoder.JSONToDatabase(atom);
-    }
-    if (BytesCoder.isValidJSON(atom)) {
-      return BytesCoder.JSONToDatabase(atom);
-    }
-    if (GeoPointCoder.isValidJSON(atom)) {
-      return (inArray || inObject ? atom : GeoPointCoder.JSONToDatabase(atom));
-    }
-    if (FileCoder.isValidJSON(atom)) {
-      return (inArray || inObject ? atom : FileCoder.JSONToDatabase(atom));
-    }
 
-    if (force) {
-      throw new Parse.Error(Parse.Error.INVALID_JSON,
-                            'bad atom: ' + atom);
-    }
-    return CannotTransform;
+      if (atom === null) {
+        return atom;
+      }
 
-  default:
-    // I don't think typeof can ever let us get here
-    throw new Parse.Error(Parse.Error.INTERNAL_SERVER_ERROR,
-                          'really did not expect value: ' + atom);
+      // TODO: check validity harder for the __type-defined types
+      if (atom.__type == 'Pointer') {
+        if (!inArray && !inObject) {
+          return atom.className + '$' + atom.objectId;
+        }
+        return {
+          __type: 'Pointer',
+          className: atom.className,
+          objectId: atom.objectId
+        };
+      }
+      if (DateCoder.isValidJSON(atom)) {
+        return DateCoder.JSONToDatabase(atom);
+      }
+      if (BytesCoder.isValidJSON(atom)) {
+        return BytesCoder.JSONToDatabase(atom);
+      }
+      if (GeoPointCoder.isValidJSON(atom)) {
+        return inArray || inObject ? atom : GeoPointCoder.JSONToDatabase(atom);
+      }
+      if (FileCoder.isValidJSON(atom)) {
+        return inArray || inObject ? atom : FileCoder.JSONToDatabase(atom);
+      }
+
+      if (force) {
+        throw new Parse.Error(Parse.Error.INVALID_JSON, 'bad atom: ' + atom);
+      }
+      return CannotTransform;
+
+    default:
+      // I don't think typeof can ever let us get here
+      throw new Parse.Error(Parse.Error.INTERNAL_SERVER_ERROR, 'really did not expect value: ' + atom);
   }
 }
 
@@ -395,7 +385,7 @@ function transformAtom(atom, force, options) {
 // else, return CannotTransform.
 // inArray is whether this is an array field.
 function transformConstraint(constraint, inArray) {
-  if (typeof constraint !== 'object' || !constraint) {
+  if ((typeof constraint === 'undefined' ? 'undefined' : _typeof(constraint)) !== 'object' || !constraint) {
     return CannotTransform;
   }
 
@@ -405,110 +395,118 @@ function transformConstraint(constraint, inArray) {
   //   $nearSphere is handled before $maxDistance
   var keys = Object.keys(constraint).sort().reverse();
   var answer = {};
-  for (var key of keys) {
-    switch(key) {
-    case '$lt':
-    case '$lte':
-    case '$gt':
-    case '$gte':
-    case '$exists':
-    case '$ne':
-      answer[key] = transformAtom(constraint[key], true,
-                                  {inArray: inArray});
-      break;
+  var _iteratorNormalCompletion = true;
+  var _didIteratorError = false;
+  var _iteratorError = undefined;
 
-    case '$in':
-    case '$nin':
-      var arr = constraint[key];
-      if (!(arr instanceof Array)) {
-        throw new Parse.Error(Parse.Error.INVALID_JSON,
-                              'bad ' + key + ' value');
+  try {
+    for (var _iterator = keys[Symbol.iterator](), _step; !(_iteratorNormalCompletion = (_step = _iterator.next()).done); _iteratorNormalCompletion = true) {
+      var key = _step.value;
+
+      switch (key) {
+        case '$lt':
+        case '$lte':
+        case '$gt':
+        case '$gte':
+        case '$exists':
+        case '$ne':
+          answer[key] = transformAtom(constraint[key], true, { inArray: inArray });
+          break;
+
+        case '$in':
+        case '$nin':
+          var arr = constraint[key];
+          if (!(arr instanceof Array)) {
+            throw new Parse.Error(Parse.Error.INVALID_JSON, 'bad ' + key + ' value');
+          }
+          answer[key] = arr.map(function (v) {
+            return transformAtom(v, true);
+          });
+          break;
+
+        case '$all':
+          var arr = constraint[key];
+          if (!(arr instanceof Array)) {
+            throw new Parse.Error(Parse.Error.INVALID_JSON, 'bad ' + key + ' value');
+          }
+          answer[key] = arr.map(function (v) {
+            return transformAtom(v, true, { inArray: true });
+          });
+          break;
+
+        case '$regex':
+          var s = constraint[key];
+          if (typeof s !== 'string') {
+            throw new Parse.Error(Parse.Error.INVALID_JSON, 'bad regex: ' + s);
+          }
+          answer[key] = s;
+          break;
+
+        case '$options':
+          var options = constraint[key];
+          if (!answer['$regex'] || typeof options !== 'string' || !options.match(/^[imxs]+$/)) {
+            throw new Parse.Error(Parse.Error.INVALID_QUERY, 'got a bad $options');
+          }
+          answer[key] = options;
+          break;
+
+        case '$nearSphere':
+          var point = constraint[key];
+          answer[key] = [point.longitude, point.latitude];
+          break;
+
+        case '$maxDistance':
+          answer[key] = constraint[key];
+          break;
+
+        // The SDKs don't seem to use these but they are documented in the
+        // REST API docs.
+        case '$maxDistanceInRadians':
+          answer['$maxDistance'] = constraint[key];
+          break;
+        case '$maxDistanceInMiles':
+          answer['$maxDistance'] = constraint[key] / 3959;
+          break;
+        case '$maxDistanceInKilometers':
+          answer['$maxDistance'] = constraint[key] / 6371;
+          break;
+
+        case '$select':
+        case '$dontSelect':
+          throw new Parse.Error(Parse.Error.COMMAND_UNAVAILABLE, 'the ' + key + ' constraint is not supported yet');
+
+        case '$within':
+          var box = constraint[key]['$box'];
+          if (!box || box.length != 2) {
+            throw new Parse.Error(Parse.Error.INVALID_JSON, 'malformatted $within arg');
+          }
+          answer[key] = {
+            '$box': [[box[0].longitude, box[0].latitude], [box[1].longitude, box[1].latitude]]
+          };
+          break;
+
+        default:
+          if (key.match(/^\$+/)) {
+            throw new Parse.Error(Parse.Error.INVALID_JSON, 'bad constraint: ' + key);
+          }
+          return CannotTransform;
       }
-      answer[key] = arr.map((v) => {
-        return transformAtom(v, true);
-      });
-      break;
-
-    case '$all':
-      var arr = constraint[key];
-      if (!(arr instanceof Array)) {
-        throw new Parse.Error(Parse.Error.INVALID_JSON,
-                              'bad ' + key + ' value');
+    }
+  } catch (err) {
+    _didIteratorError = true;
+    _iteratorError = err;
+  } finally {
+    try {
+      if (!_iteratorNormalCompletion && _iterator.return) {
+        _iterator.return();
       }
-      answer[key] = arr.map((v) => {
-        return transformAtom(v, true, { inArray: true });
-      });
-      break;
-
-    case '$regex':
-      var s = constraint[key];
-      if (typeof s !== 'string') {
-        throw new Parse.Error(Parse.Error.INVALID_JSON, 'bad regex: ' + s);
+    } finally {
+      if (_didIteratorError) {
+        throw _iteratorError;
       }
-      answer[key] = s;
-      break;
-
-    case '$options':
-      var options = constraint[key];
-      if (!answer['$regex'] || (typeof options !== 'string')
-          || !options.match(/^[imxs]+$/)) {
-        throw new Parse.Error(Parse.Error.INVALID_QUERY,
-                              'got a bad $options');
-      }
-      answer[key] = options;
-      break;
-
-    case '$nearSphere':
-      var point = constraint[key];
-      answer[key] = [point.longitude, point.latitude];
-      break;
-
-    case '$maxDistance':
-      answer[key] = constraint[key];
-      break;
-
-    // The SDKs don't seem to use these but they are documented in the
-    // REST API docs.
-    case '$maxDistanceInRadians':
-      answer['$maxDistance'] = constraint[key];
-      break;
-    case '$maxDistanceInMiles':
-      answer['$maxDistance'] = constraint[key] / 3959;
-      break;
-    case '$maxDistanceInKilometers':
-      answer['$maxDistance'] = constraint[key] / 6371;
-      break;
-
-    case '$select':
-    case '$dontSelect':
-      throw new Parse.Error(
-        Parse.Error.COMMAND_UNAVAILABLE,
-        'the ' + key + ' constraint is not supported yet');
-
-    case '$within':
-      var box = constraint[key]['$box'];
-      if (!box || box.length != 2) {
-        throw new Parse.Error(
-          Parse.Error.INVALID_JSON,
-          'malformatted $within arg');
-      }
-      answer[key] = {
-        '$box': [
-          [box[0].longitude, box[0].latitude],
-          [box[1].longitude, box[1].latitude]
-        ]
-      };
-      break;
-
-    default:
-      if (key.match(/^\$+/)) {
-        throw new Parse.Error(
-          Parse.Error.INVALID_JSON,
-          'bad constraint: ' + key);
-      }
-      return CannotTransform;
     }
   }
+
   return answer;
 }
 
@@ -523,279 +521,248 @@ function transformConstraint(constraint, inArray) {
 // Returns CannotTransform if this cannot transform it.
 // Returns undefined if this should be a no-op.
 function transformUpdateOperator(operator, flatten) {
-  if (typeof operator !== 'object' || !operator.__op) {
+  if ((typeof operator === 'undefined' ? 'undefined' : _typeof(operator)) !== 'object' || !operator.__op) {
     return CannotTransform;
   }
 
-  switch(operator.__op) {
-  case 'Delete':
-    if (flatten) {
-      return undefined;
-    } else {
-      return {__op: '$unset', arg: ''};
-    }
+  switch (operator.__op) {
+    case 'Delete':
+      if (flatten) {
+        return undefined;
+      } else {
+        return { __op: '$unset', arg: '' };
+      }
 
-  case 'Increment':
-    if (typeof operator.amount !== 'number') {
-      throw new Parse.Error(Parse.Error.INVALID_JSON,
-                            'incrementing must provide a number');
-    }
-    if (flatten) {
-      return operator.amount;
-    } else {
-      return {__op: '$inc', arg: operator.amount};
-    }
+    case 'Increment':
+      if (typeof operator.amount !== 'number') {
+        throw new Parse.Error(Parse.Error.INVALID_JSON, 'incrementing must provide a number');
+      }
+      if (flatten) {
+        return operator.amount;
+      } else {
+        return { __op: '$inc', arg: operator.amount };
+      }
 
-  case 'Add':
-  case 'AddUnique':
-    if (!(operator.objects instanceof Array)) {
-      throw new Parse.Error(Parse.Error.INVALID_JSON,
-                            'objects to add must be an array');
-    }
-    var toAdd = operator.objects.map((obj) => {
-      return transformAtom(obj, true, { inArray: true });
-    });
-    if (flatten) {
-      return toAdd;
-    } else {
-      var mongoOp = {
-        Add: '$push',
-        AddUnique: '$addToSet'
-      }[operator.__op];
-      return {__op: mongoOp, arg: {'$each': toAdd}};
-    }
+    case 'Add':
+    case 'AddUnique':
+      if (!(operator.objects instanceof Array)) {
+        throw new Parse.Error(Parse.Error.INVALID_JSON, 'objects to add must be an array');
+      }
+      var toAdd = operator.objects.map(function (obj) {
+        return transformAtom(obj, true, { inArray: true });
+      });
+      if (flatten) {
+        return toAdd;
+      } else {
+        var mongoOp = {
+          Add: '$push',
+          AddUnique: '$addToSet'
+        }[operator.__op];
+        return { __op: mongoOp, arg: { '$each': toAdd } };
+      }
 
-  case 'Remove':
-    if (!(operator.objects instanceof Array)) {
-      throw new Parse.Error(Parse.Error.INVALID_JSON,
-                            'objects to remove must be an array');
-    }
-    var toRemove = operator.objects.map((obj) => {
-      return transformAtom(obj, true, { inArray: true });
-    });
-    if (flatten) {
-      return [];
-    } else {
-      return {__op: '$pullAll', arg: toRemove};
-    }
+    case 'Remove':
+      if (!(operator.objects instanceof Array)) {
+        throw new Parse.Error(Parse.Error.INVALID_JSON, 'objects to remove must be an array');
+      }
+      var toRemove = operator.objects.map(function (obj) {
+        return transformAtom(obj, true, { inArray: true });
+      });
+      if (flatten) {
+        return [];
+      } else {
+        return { __op: '$pullAll', arg: toRemove };
+      }
 
-  default:
-    throw new Parse.Error(
-      Parse.Error.COMMAND_UNAVAILABLE,
-      'the ' + operator.__op + ' op is not supported yet');
+    default:
+      throw new Parse.Error(Parse.Error.COMMAND_UNAVAILABLE, 'the ' + operator.__op + ' op is not supported yet');
   }
 }
-
 
 // Converts from a mongo-format object to a REST-format object.
 // Does not strip out anything based on a lack of authentication.
 function untransformObject(schema, className, mongoObject) {
-  switch(typeof mongoObject) {
-  case 'string':
-  case 'number':
-  case 'boolean':
-    return mongoObject;
-  case 'undefined':
-  case 'symbol':
-  case 'function':
-    throw 'bad value in untransformObject';
-  case 'object':
-    if (mongoObject === null) {
-      return null;
-    }
+  var isNestedObject = arguments.length <= 3 || arguments[3] === undefined ? false : arguments[3];
 
-    if (mongoObject instanceof Array) {
-      return mongoObject.map((o) => {
-        return untransformObject(schema, className, o);
-      });
-    }
-
-    if (mongoObject instanceof Date) {
-      return Parse._encode(mongoObject);
-    }
-
-    if (BytesCoder.isValidDatabaseObject(mongoObject)) {
-      return BytesCoder.databaseToJSON(mongoObject);
-    }
-
-    var restObject = untransformACL(mongoObject);
-    for (var key in mongoObject) {
-      switch(key) {
-      case '_id':
-        restObject['objectId'] = '' + mongoObject[key];
-        break;
-      case '_hashed_password':
-        restObject['password'] = mongoObject[key];
-        break;
-      case '_acl':
-      case '_email_verify_token':
-      case '_perishable_token':
-        break;
-      case '_session_token':
-        restObject['sessionToken'] = mongoObject[key];
-        break;
-      case 'updatedAt':
-      case '_updated_at':
-        restObject['updatedAt'] = Parse._encode(new Date(mongoObject[key])).iso;
-        break;
-      case 'createdAt':
-      case '_created_at':
-        restObject['createdAt'] = Parse._encode(new Date(mongoObject[key])).iso;
-        break;
-      case 'expiresAt':
-      case '_expiresAt':
-        restObject['expiresAt'] = Parse._encode(new Date(mongoObject[key])).iso;
-        break;
-      case '_auth_data_anonymous':
-        restObject['authData'] = restObject['authData'] || {};
-        restObject['authData']['anonymous'] = mongoObject[key];
-        break;
-      case '_auth_data_facebook':
-        restObject['authData'] = restObject['authData'] || {};
-        restObject['authData']['facebook'] = mongoObject[key];
-        break;
-      default:
-        if (key.indexOf('_p_') == 0) {
-          var newKey = key.substring(3);
-          var expected;
-          if (schema && schema.getExpectedType) {
-            expected = schema.getExpectedType(className, newKey);
-          }
-          if (!expected) {
-            console.log(
-              'Found a pointer column not in the schema, dropping it.',
-              className, newKey);
-            break;
-          }
-          if (expected && expected[0] != '*') {
-            console.log('Found a pointer in a non-pointer column, dropping it.', className, key);
-            break;
-          }
-          if (mongoObject[key] === null) {
-            break;
-          }
-          var objData = mongoObject[key].split('$');
-          var newClass = (expected ? expected.substring(1) : objData[0]);
-          if (objData[0] !== newClass) {
-            throw 'pointer to incorrect className';
-          }
-          restObject[newKey] = {
-            __type: 'Pointer',
-            className: objData[0],
-            objectId: objData[1]
-          };
-          break;
-        } else if (key[0] == '_' && key != '__type') {
-          throw ('bad key in untransform: ' + key);
-        //} else if (mongoObject[key] === null) {
-          //break;
-        } else {
-          var expectedType = schema.getExpectedType(className, key);
-          var value = mongoObject[key];
-          if (expectedType === 'file' && FileCoder.isValidDatabaseObject(value)) {
-            restObject[key] = FileCoder.databaseToJSON(value);
-            break;
-          }
-          if (expectedType === 'geopoint' && GeoPointCoder.isValidDatabaseObject(value)) {
-            restObject[key] = GeoPointCoder.databaseToJSON(value);
-            break;
-          }
-        }
-        restObject[key] = untransformObject(schema, className,
-                                            mongoObject[key]);
+  switch (typeof mongoObject === 'undefined' ? 'undefined' : _typeof(mongoObject)) {
+    case 'string':
+    case 'number':
+    case 'boolean':
+      return mongoObject;
+    case 'undefined':
+    case 'symbol':
+    case 'function':
+      throw 'bad value in untransformObject';
+    case 'object':
+      if (mongoObject === null) {
+        return null;
       }
-    }
-    return restObject;
-  default:
-    throw 'unknown js type';
+
+      if (mongoObject instanceof Array) {
+        return mongoObject.map(function (o) {
+          return untransformObject(schema, className, o);
+        });
+      }
+
+      if (mongoObject instanceof Date) {
+        return Parse._encode(mongoObject);
+      }
+
+      if (BytesCoder.isValidDatabaseObject(mongoObject)) {
+        return BytesCoder.databaseToJSON(mongoObject);
+      }
+
+      var restObject = untransformACL(mongoObject);
+      for (var key in mongoObject) {
+        switch (key) {
+          case '_id':
+            restObject['objectId'] = '' + mongoObject[key];
+            break;
+          case '_hashed_password':
+            restObject['password'] = mongoObject[key];
+            break;
+          case '_acl':
+          case '_email_verify_token':
+          case '_perishable_token':
+          case '_tombstone':
+            break;
+          case '_session_token':
+            restObject['sessionToken'] = mongoObject[key];
+            break;
+          case 'updatedAt':
+          case '_updated_at':
+            restObject['updatedAt'] = Parse._encode(new Date(mongoObject[key])).iso;
+            break;
+          case 'createdAt':
+          case '_created_at':
+            restObject['createdAt'] = Parse._encode(new Date(mongoObject[key])).iso;
+            break;
+          case 'expiresAt':
+          case '_expiresAt':
+            restObject['expiresAt'] = Parse._encode(new Date(mongoObject[key]));
+            break;
+          default:
+            // Check other auth data keys
+            var authDataMatch = key.match(/^_auth_data_([a-zA-Z0-9_]+)$/);
+            if (authDataMatch) {
+              var provider = authDataMatch[1];
+              restObject['authData'] = restObject['authData'] || {};
+              restObject['authData'][provider] = mongoObject[key];
+              break;
+            }
+
+            if (key.indexOf('_p_') == 0) {
+              var newKey = key.substring(3);
+              var expected;
+              if (schema && schema.getExpectedType) {
+                expected = schema.getExpectedType(className, newKey);
+              }
+              if (!expected) {
+                console.log('Found a pointer column not in the schema, dropping it.', className, newKey);
+                break;
+              }
+              if (expected && expected[0] != '*') {
+                console.log('Found a pointer in a non-pointer column, dropping it.', className, key);
+                break;
+              }
+              if (mongoObject[key] === null) {
+                break;
+              }
+              var objData = mongoObject[key].split('$');
+              var newClass = expected ? expected.substring(1) : objData[0];
+              if (objData[0] !== newClass) {
+                throw 'pointer to incorrect className';
+              }
+              restObject[newKey] = {
+                __type: 'Pointer',
+                className: objData[0],
+                objectId: objData[1]
+              };
+              break;
+            } else if (!isNestedObject && key[0] == '_' && key != '__type') {
+              throw 'bad key in untransform: ' + key;
+            } else {
+              var expectedType = schema.getExpectedType(className, key);
+              var value = mongoObject[key];
+              if (expectedType === 'file' && FileCoder.isValidDatabaseObject(value)) {
+                restObject[key] = FileCoder.databaseToJSON(value);
+                break;
+              }
+              if (expectedType === 'geopoint' && GeoPointCoder.isValidDatabaseObject(value)) {
+                restObject[key] = GeoPointCoder.databaseToJSON(value);
+                break;
+              }
+            }
+            restObject[key] = untransformObject(schema, className, mongoObject[key], true);
+        }
+      }
+      return restObject;
+    default:
+      throw 'unknown js type';
   }
 }
 
 var DateCoder = {
-  JSONToDatabase(json) {
+  JSONToDatabase: function JSONToDatabase(json) {
     return new Date(json.iso);
   },
-
-  isValidJSON(value) {
-    return (typeof value === 'object' &&
-      value !== null &&
-      value.__type === 'Date'
-    );
+  isValidJSON: function isValidJSON(value) {
+    return (typeof value === 'undefined' ? 'undefined' : _typeof(value)) === 'object' && value !== null && value.__type === 'Date';
   }
 };
 
 var BytesCoder = {
-  databaseToJSON(object) {
+  databaseToJSON: function databaseToJSON(object) {
     return {
       __type: 'Bytes',
       base64: object.buffer.toString('base64')
     };
   },
-
-  isValidDatabaseObject(object) {
-    return (object instanceof mongodb.Binary);
+  isValidDatabaseObject: function isValidDatabaseObject(object) {
+    return object instanceof mongodb.Binary;
   },
-
-  JSONToDatabase(json) {
+  JSONToDatabase: function JSONToDatabase(json) {
     return new mongodb.Binary(new Buffer(json.base64, 'base64'));
   },
-
-  isValidJSON(value) {
-    return (typeof value === 'object' &&
-      value !== null &&
-      value.__type === 'Bytes'
-    );
+  isValidJSON: function isValidJSON(value) {
+    return (typeof value === 'undefined' ? 'undefined' : _typeof(value)) === 'object' && value !== null && value.__type === 'Bytes';
   }
 };
 
 var GeoPointCoder = {
-  databaseToJSON(object) {
+  databaseToJSON: function databaseToJSON(object) {
     return {
       __type: 'GeoPoint',
       latitude: object[1],
       longitude: object[0]
-    }
+    };
   },
-
-  isValidDatabaseObject(object) {
-    return (object instanceof Array &&
-      object.length == 2
-    );
+  isValidDatabaseObject: function isValidDatabaseObject(object) {
+    return object instanceof Array && object.length == 2;
   },
-
-  JSONToDatabase(json) {
-    return [ json.longitude, json.latitude ];
+  JSONToDatabase: function JSONToDatabase(json) {
+    return [json.longitude, json.latitude];
   },
-
-  isValidJSON(value) {
-    return (typeof value === 'object' &&
-      value !== null &&
-      value.__type === 'GeoPoint'
-    );
+  isValidJSON: function isValidJSON(value) {
+    return (typeof value === 'undefined' ? 'undefined' : _typeof(value)) === 'object' && value !== null && value.__type === 'GeoPoint';
   }
 };
 
 var FileCoder = {
-  databaseToJSON(object) {
+  databaseToJSON: function databaseToJSON(object) {
     return {
       __type: 'File',
       name: object
-    }
+    };
   },
-
-  isValidDatabaseObject(object) {
-    return (typeof object === 'string');
+  isValidDatabaseObject: function isValidDatabaseObject(object) {
+    return typeof object === 'string';
   },
-
-  JSONToDatabase(json) {
+  JSONToDatabase: function JSONToDatabase(json) {
     return json.name;
   },
-
-  isValidJSON(value) {
-    return (typeof value === 'object' &&
-      value !== null &&
-      value.__type === 'File'
-    );
+  isValidJSON: function isValidJSON(value) {
+    return (typeof value === 'undefined' ? 'undefined' : _typeof(value)) === 'object' && value !== null && value.__type === 'File';
   }
 };
 
@@ -806,4 +773,3 @@ module.exports = {
   transformWhere: transformWhere,
   untransformObject: untransformObject
 };
-
